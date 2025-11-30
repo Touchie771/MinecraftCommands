@@ -3,6 +3,7 @@ package me.touchie771.minecraftCommands.api;
 import me.touchie771.minecraftCommands.api.annotations.Command;
 import me.touchie771.minecraftCommands.api.annotations.Execute;
 import me.touchie771.minecraftCommands.api.annotations.Permission;
+import me.touchie771.minecraftCommands.api.annotations.TabComplete;
 import org.bukkit.Bukkit;
 import org.bukkit.command.CommandMap;
 import org.bukkit.command.CommandSender;
@@ -41,17 +42,20 @@ public class CommandRegister {
             try {
                 Object instance = clazz.getDeclaredConstructor().newInstance();
                 Method executeMethod = null;
+                Method tabCompleteMethod = null;
 
-                // Find the method annotated with @Execute
+                // Find methods annotated with @Execute and @TabComplete
                 for (Method method : clazz.getDeclaredMethods()) {
                     if (method.isAnnotationPresent(Execute.class)) {
                         executeMethod = method;
-                        break;
+                    }
+                    if (method.isAnnotationPresent(TabComplete.class)) {
+                        tabCompleteMethod = method;
                     }
                 }
 
                 if (executeMethod != null) {
-                    registerCommand(name, description, usage, aliases, instance, executeMethod, clazz);
+                    registerCommand(name, description, usage, aliases, instance, executeMethod, tabCompleteMethod, clazz);
                 }
 
             } catch (Exception e) {
@@ -60,18 +64,18 @@ public class CommandRegister {
         }
     }
 
-    private void registerCommand(String name, String description, String usage, List<String> aliases, Object instance, Method method, Class<?> clazz) {
+    private void registerCommand(String name, String description, String usage, List<String> aliases, Object instance, Method executeMethod, Method tabCompleteMethod, Class<?> clazz) {
         org.bukkit.command.Command command = new org.bukkit.command.Command(name, description, usage, aliases) {
             @Override
             public boolean execute(@NotNull CommandSender sender, @NotNull String commandLabel, String[] args) {
                 try {
                     // Permission check
-                    if (!checkPermission(sender, clazz) || !checkPermission(sender, method)) {
+                    if (!checkPermission(sender, clazz) || !checkPermission(sender, executeMethod)) {
                         return true;
                     }
 
-                    method.setAccessible(true);
-                    Class<?>[] paramTypes = method.getParameterTypes();
+                    executeMethod.setAccessible(true);
+                    Class<?>[] paramTypes = executeMethod.getParameterTypes();
 
                     // Case: (SenderType, String[])
                     if (paramTypes.length == 2 && 
@@ -82,7 +86,7 @@ public class CommandRegister {
                             sender.sendMessage("§cThis command cannot be executed by " + sender.getName() + "!");
                             return true;
                         }
-                        method.invoke(instance, sender, args);
+                        executeMethod.invoke(instance, sender, args);
                         return true;
                     } 
                     // Case: (SenderType)
@@ -91,12 +95,12 @@ public class CommandRegister {
                             sender.sendMessage("§cThis command cannot be executed by " + sender.getName() + "!");
                             return true;
                         }
-                        method.invoke(instance, sender);
+                        executeMethod.invoke(instance, sender);
                         return true;
                     } 
                     // Case: ()
                     else if (paramTypes.length == 0) {
-                        method.invoke(instance);
+                        executeMethod.invoke(instance);
                         return true;
                     } else {
                         sender.sendMessage("§cError: Invalid command method signature.");
@@ -108,6 +112,36 @@ public class CommandRegister {
                     return false;
                 }
             }
+
+            @NotNull
+            @Override
+            public List<String> tabComplete(@NotNull CommandSender sender, @NotNull String alias, @NotNull String[] args) throws IllegalArgumentException {
+                if (tabCompleteMethod != null) {
+                    try {
+                        tabCompleteMethod.setAccessible(true);
+                        Class<?>[] paramTypes = tabCompleteMethod.getParameterTypes();
+
+                        if (paramTypes.length == 2 && 
+                            CommandSender.class.isAssignableFrom(paramTypes[0]) && 
+                            String[].class.isAssignableFrom(paramTypes[1]) &&
+                            List.class.isAssignableFrom(tabCompleteMethod.getReturnType())) {
+                            
+                            // If specific sender type is required but not provided, return empty list or handle gracefully
+                            if (!paramTypes[0].isInstance(sender)) {
+                                return new ArrayList<>();
+                            }
+
+                            @SuppressWarnings("unchecked")
+                            List<String> completions = (List<String>) tabCompleteMethod.invoke(instance, sender, args);
+                            return completions;
+                        }
+                    } catch (Exception e) {
+                        plugin.getLogger().warning("Failed to tab complete command " + name + "!");
+                        plugin.getLogger().warning(e.getMessage());
+                    }
+                }
+                return super.tabComplete(sender, alias, args);
+            }
         };
 
         if (commandMap != null) {
@@ -115,7 +149,8 @@ public class CommandRegister {
             commandMap.register(name, plugin.getName(), command);
         }
     }
-
+    
+    @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     private boolean checkPermission(CommandSender sender, java.lang.reflect.AnnotatedElement element) {
         if (element.isAnnotationPresent(Permission.class)) {
             Permission permission = element.getAnnotation(Permission.class);

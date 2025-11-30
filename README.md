@@ -7,6 +7,7 @@ A lightweight, annotation-based command framework for Spigot/Bukkit plugins.
 - **Flexible Parameters**: Supports various method signatures for command execution.
 - **Automatic Registration**: Easily register all command classes.
 - **Permission Handling**: Use `@Permission` to enforce command permissions.
+- **Tab Completion**: Use `@TabComplete` to provide tab completions.
 - **Type Safety**: Automatically checks if the sender (e.g., Player vs Console) matches the method signature.
 
 ## Usage
