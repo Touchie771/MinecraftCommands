@@ -2,6 +2,7 @@ package me.touchie771.minecraftCommands.api;
 
 import me.touchie771.minecraftCommands.api.annotations.Command;
 import me.touchie771.minecraftCommands.api.annotations.Execute;
+import me.touchie771.minecraftCommands.api.annotations.Permission;
 import org.bukkit.Bukkit;
 import org.bukkit.command.CommandMap;
 import org.bukkit.command.CommandSender;
@@ -50,7 +51,7 @@ public class CommandRegister {
                 }
 
                 if (executeMethod != null) {
-                    registerCommand(name, description, usage, aliases, instance, executeMethod);
+                    registerCommand(name, description, usage, aliases, instance, executeMethod, clazz);
                 }
 
             } catch (Exception e) {
@@ -59,11 +60,16 @@ public class CommandRegister {
         }
     }
 
-    private void registerCommand(String name, String description, String usage, List<String> aliases, Object instance, Method method) {
+    private void registerCommand(String name, String description, String usage, List<String> aliases, Object instance, Method method, Class<?> clazz) {
         org.bukkit.command.Command command = new org.bukkit.command.Command(name, description, usage, aliases) {
             @Override
             public boolean execute(@NotNull CommandSender sender, @NotNull String commandLabel, String[] args) {
                 try {
+                    // Permission check
+                    if (!checkPermission(sender, clazz) || !checkPermission(sender, method)) {
+                        return true;
+                    }
+
                     method.setAccessible(true);
                     Class<?>[] paramTypes = method.getParameterTypes();
 
@@ -108,6 +114,17 @@ public class CommandRegister {
             // Register with the fallback prefix
             commandMap.register(name, plugin.getName(), command);
         }
+    }
+
+    private boolean checkPermission(CommandSender sender, java.lang.reflect.AnnotatedElement element) {
+        if (element.isAnnotationPresent(Permission.class)) {
+            Permission permission = element.getAnnotation(Permission.class);
+            if (!sender.hasPermission(permission.value())) {
+                sender.sendMessage(permission.message());
+                return false;
+            }
+        }
+        return true;
     }
 
     private CommandMap getCommandMap() {
