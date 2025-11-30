@@ -68,4 +68,29 @@ Where `SenderType` can be `CommandSender`, `Player`, `ConsoleCommandSender`, etc
 - `message`: Custom no-permission message (optional).
 
 ## Installation
-Copy the `me.touchie771.minecraftCommands.api` package into your project.
+
+### GitHub Packages
+The library is published to GitHub Packages. Add the repository to your `build.gradle`:
+
+```gradle
+repositories {
+    maven {
+        name = "GitHubPackages"
+        url = uri("https://maven.pkg.github.com/Touchie771/MinecraftCommands")
+        credentials {
+            username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
+            password = project.findProperty("gpr.key") ?: System.getenv("TOKEN")
+        }
+    }
+}
+
+dependencies {
+    implementation 'me.touchie771:minecraftcommands:1.0.0'
+}
+```
+
+### Manual Installation
+Alternatively, you can copy the `me.touchie771.minecraftCommands.api` package into your project.
+
+## About
+This library was originally created for personal use, but anyone is welcome to use it in their projects.
