@@ -65,23 +65,40 @@ public class CommandRegister {
             public boolean execute(@NotNull CommandSender sender, @NotNull String commandLabel, String[] args) {
                 try {
                     method.setAccessible(true);
-                    // Determine parameters and invoke
                     Class<?>[] paramTypes = method.getParameterTypes();
+
+                    // Case: (SenderType, String[])
                     if (paramTypes.length == 2 && 
                         CommandSender.class.isAssignableFrom(paramTypes[0]) && 
                         String[].class.isAssignableFrom(paramTypes[1])) {
+                        
+                        if (!paramTypes[0].isInstance(sender)) {
+                            sender.sendMessage("§cThis command cannot be executed by " + sender.getName() + "!");
+                            return true;
+                        }
                         method.invoke(instance, sender, args);
-                    } else if (paramTypes.length == 1 && CommandSender.class.isAssignableFrom(paramTypes[0])) {
+                        return true;
+                    } 
+                    // Case: (SenderType)
+                    else if (paramTypes.length == 1 && CommandSender.class.isAssignableFrom(paramTypes[0])) {
+                        if (!paramTypes[0].isInstance(sender)) {
+                            sender.sendMessage("§cThis command cannot be executed by " + sender.getName() + "!");
+                            return true;
+                        }
                         method.invoke(instance, sender);
-                    } else if (paramTypes.length == 0) {
+                        return true;
+                    } 
+                    // Case: ()
+                    else if (paramTypes.length == 0) {
                         method.invoke(instance);
+                        return true;
                     } else {
                         sender.sendMessage("§cError: Invalid command method signature.");
                         return false;
                     }
-                    return true;
                 } catch (Exception e) {
                     plugin.getLogger().severe("Failed to execute command " + name + "!");
+                    plugin.getLogger().severe(e.getMessage());
                     return false;
                 }
             }
