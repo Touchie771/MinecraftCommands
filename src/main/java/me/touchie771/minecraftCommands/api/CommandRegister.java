@@ -45,7 +45,8 @@ public class CommandRegister {
                 Object instance = clazz.getDeclaredConstructor().newInstance();
                 Method defaultExecuteMethod = null;
                 Map<String, Method> subCommands = new HashMap<>();
-                Method tabCompleteMethod = null;
+                Method defaultTabCompleteMethod = null;
+                Map<String, Method> subCommandTabCompleters = new HashMap<>();
 
                 // Find methods annotated with @Execute and @TabComplete
                 for (Method method : clazz.getDeclaredMethods()) {
@@ -58,12 +59,17 @@ public class CommandRegister {
                         }
                     }
                     if (method.isAnnotationPresent(TabComplete.class)) {
-                        tabCompleteMethod = method;
+                        TabComplete tabComplete = method.getAnnotation(TabComplete.class);
+                        if (tabComplete.name().isEmpty()) {
+                            defaultTabCompleteMethod = method;
+                        } else {
+                            subCommandTabCompleters.put(tabComplete.name().toLowerCase(), method);
+                        }
                     }
                 }
 
                 if (defaultExecuteMethod != null || !subCommands.isEmpty()) {
-                    registerCommand(name, description, usage, aliases, instance, defaultExecuteMethod, subCommands, tabCompleteMethod, clazz);
+                    registerCommand(name, description, usage, aliases, instance, defaultExecuteMethod, subCommands, defaultTabCompleteMethod, subCommandTabCompleters, clazz);
                 }
 
             } catch (Exception e) {
@@ -72,7 +78,7 @@ public class CommandRegister {
         }
     }
 
-    private void registerCommand(String name, String description, String usage, List<String> aliases, Object instance, Method defaultExecuteMethod, Map<String, Method> subCommands, Method tabCompleteMethod, Class<?> clazz) {
+    private void registerCommand(String name, String description, String usage, List<String> aliases, Object instance, Method defaultExecuteMethod, Map<String, Method> subCommands, Method defaultTabCompleteMethod, Map<String, Method> subCommandTabCompleters, Class<?> clazz) {
         org.bukkit.command.Command command = new org.bukkit.command.Command(name, description, usage, aliases) {
             @Override
             public boolean execute(@NotNull CommandSender sender, @NotNull String commandLabel, String[] args) {
@@ -144,15 +150,23 @@ public class CommandRegister {
             @NotNull
             @Override
             public List<String> tabComplete(@NotNull CommandSender sender, @NotNull String alias, @NotNull String[] args) throws IllegalArgumentException {
-                if (tabCompleteMethod != null) {
+                Method methodToUse = defaultTabCompleteMethod;
+                String[] argsToPass = args;
+
+                if (args.length > 1 && subCommandTabCompleters.containsKey(args[0].toLowerCase())) {
+                    methodToUse = subCommandTabCompleters.get(args[0].toLowerCase());
+                    argsToPass = Arrays.copyOfRange(args, 1, args.length);
+                }
+
+                if (methodToUse != null) {
                     try {
-                        tabCompleteMethod.setAccessible(true);
-                        Class<?>[] paramTypes = tabCompleteMethod.getParameterTypes();
+                        methodToUse.setAccessible(true);
+                        Class<?>[] paramTypes = methodToUse.getParameterTypes();
 
                         if (paramTypes.length == 2 && 
                             CommandSender.class.isAssignableFrom(paramTypes[0]) && 
                             String[].class.isAssignableFrom(paramTypes[1]) &&
-                            List.class.isAssignableFrom(tabCompleteMethod.getReturnType())) {
+                            List.class.isAssignableFrom(methodToUse.getReturnType())) {
                             
                             // If specific sender type is required but not provided, return empty list or handle gracefully
                             if (!paramTypes[0].isInstance(sender)) {
@@ -160,7 +174,7 @@ public class CommandRegister {
                             }
 
                             @SuppressWarnings("unchecked")
-                            List<String> completions = (List<String>) tabCompleteMethod.invoke(instance, sender, args);
+                            List<String> completions = (List<String>) methodToUse.invoke(instance, sender, argsToPass);
                             return completions;
                         }
                     } catch (Exception e) {
