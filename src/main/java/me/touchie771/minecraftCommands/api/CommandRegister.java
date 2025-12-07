@@ -14,7 +14,9 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 public class CommandRegister {
@@ -41,21 +43,27 @@ public class CommandRegister {
 
             try {
                 Object instance = clazz.getDeclaredConstructor().newInstance();
-                Method executeMethod = null;
+                Method defaultExecuteMethod = null;
+                Map<String, Method> subCommands = new HashMap<>();
                 Method tabCompleteMethod = null;
 
                 // Find methods annotated with @Execute and @TabComplete
                 for (Method method : clazz.getDeclaredMethods()) {
                     if (method.isAnnotationPresent(Execute.class)) {
-                        executeMethod = method;
+                        Execute execute = method.getAnnotation(Execute.class);
+                        if (execute.name().isEmpty()) {
+                            defaultExecuteMethod = method;
+                        } else {
+                            subCommands.put(execute.name().toLowerCase(), method);
+                        }
                     }
                     if (method.isAnnotationPresent(TabComplete.class)) {
                         tabCompleteMethod = method;
                     }
                 }
 
-                if (executeMethod != null) {
-                    registerCommand(name, description, usage, aliases, instance, executeMethod, tabCompleteMethod, clazz);
+                if (defaultExecuteMethod != null || !subCommands.isEmpty()) {
+                    registerCommand(name, description, usage, aliases, instance, defaultExecuteMethod, subCommands, tabCompleteMethod, clazz);
                 }
 
             } catch (Exception e) {
@@ -64,18 +72,38 @@ public class CommandRegister {
         }
     }
 
-    private void registerCommand(String name, String description, String usage, List<String> aliases, Object instance, Method executeMethod, Method tabCompleteMethod, Class<?> clazz) {
+    private void registerCommand(String name, String description, String usage, List<String> aliases, Object instance, Method defaultExecuteMethod, Map<String, Method> subCommands, Method tabCompleteMethod, Class<?> clazz) {
         org.bukkit.command.Command command = new org.bukkit.command.Command(name, description, usage, aliases) {
             @Override
             public boolean execute(@NotNull CommandSender sender, @NotNull String commandLabel, String[] args) {
                 try {
-                    // Permission check
-                    if (!checkPermission(sender, clazz) || !checkPermission(sender, executeMethod)) {
+                    // Check main command permission first
+                    if (!checkPermission(sender, clazz)) {
                         return true;
                     }
 
-                    executeMethod.setAccessible(true);
-                    Class<?>[] paramTypes = executeMethod.getParameterTypes();
+                    Method methodToExecute = defaultExecuteMethod;
+                    String[] argsToPass = args;
+
+                    // Check for subcommands
+                    if (args.length > 0 && subCommands.containsKey(args[0].toLowerCase())) {
+                        methodToExecute = subCommands.get(args[0].toLowerCase());
+                        // Shift arguments for subcommand
+                        argsToPass = Arrays.copyOfRange(args, 1, args.length);
+                    }
+
+                    if (methodToExecute == null) {
+                        // No default executor and no matching subcommand
+                        return false;
+                    }
+
+                    // Check method-specific permission
+                    if (!checkPermission(sender, methodToExecute)) {
+                        return true;
+                    }
+
+                    methodToExecute.setAccessible(true);
+                    Class<?>[] paramTypes = methodToExecute.getParameterTypes();
 
                     // Case: (SenderType, String[])
                     if (paramTypes.length == 2 && 
@@ -86,7 +114,7 @@ public class CommandRegister {
                             sender.sendMessage("§cThis command cannot be executed by " + sender.getName() + "!");
                             return true;
                         }
-                        executeMethod.invoke(instance, sender, args);
+                        methodToExecute.invoke(instance, sender, argsToPass);
                         return true;
                     } 
                     // Case: (SenderType)
@@ -95,12 +123,12 @@ public class CommandRegister {
                             sender.sendMessage("§cThis command cannot be executed by " + sender.getName() + "!");
                             return true;
                         }
-                        executeMethod.invoke(instance, sender);
+                        methodToExecute.invoke(instance, sender);
                         return true;
                     } 
                     // Case: ()
                     else if (paramTypes.length == 0) {
-                        executeMethod.invoke(instance);
+                        methodToExecute.invoke(instance);
                         return true;
                     } else {
                         sender.sendMessage("§cError: Invalid command method signature.");
@@ -139,6 +167,20 @@ public class CommandRegister {
                         plugin.getLogger().warning("Failed to tab complete command " + name + "!");
                         plugin.getLogger().warning(e.getMessage());
                     }
+                } else if (args.length == 1) {
+                    // Default tab completion for subcommands
+                    List<String> completions = new ArrayList<>();
+                    String currentArg = args[0].toLowerCase();
+                    for (String subCommand : subCommands.keySet()) {
+                        if (subCommand.startsWith(currentArg)) {
+                            Method method = subCommands.get(subCommand);
+                            // Check permission for subcommand before showing in tab complete
+                            if (checkPermission(sender, method, true)) {
+                                completions.add(subCommand);
+                            }
+                        }
+                    }
+                    return completions;
                 }
                 return super.tabComplete(sender, alias, args);
             }
@@ -152,10 +194,16 @@ public class CommandRegister {
     
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     private boolean checkPermission(CommandSender sender, java.lang.reflect.AnnotatedElement element) {
+        return checkPermission(sender, element, false);
+    }
+
+    private boolean checkPermission(CommandSender sender, java.lang.reflect.AnnotatedElement element, boolean silent) {
         if (element.isAnnotationPresent(Permission.class)) {
             Permission permission = element.getAnnotation(Permission.class);
             if (!sender.hasPermission(permission.value())) {
-                sender.sendMessage(permission.message());
+                if (!silent) {
+                    sender.sendMessage(permission.message());
+                }
                 return false;
             }
         }
