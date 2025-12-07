@@ -7,7 +7,8 @@ A lightweight, annotation-based command framework for Spigot/Bukkit plugins.
 - **Flexible Parameters**: Supports various method signatures for command execution.
 - **Automatic Registration**: Easily register all command classes.
 - **Permission Handling**: Use `@Permission` to enforce command permissions.
-- **Tab Completion**: Use `@TabComplete` to provide tab completions.
+- **Subcommands**: Easily handle subcommands by specifying a name in `@Execute`.
+- **Tab Completion**: Use `@TabComplete` to provide tab completions, including support for subcommands.
 - **Type Safety**: Automatically checks if the sender (e.g., Player vs Console) matches the method signature.
 
 ## Usage
@@ -47,6 +48,32 @@ public void onEnable() {
 }
 ```
 
+### 3. Subcommands
+You can define subcommands by adding a `name` to the `@Execute` annotation.
+
+```java
+@Command(name = "clan")
+public class ClanCommand {
+
+    @Execute // Default executor: /clan
+    public void info(Player player) {
+        player.sendMessage("Clan Info...");
+    }
+
+    @Execute(name = "create") // Subcommand: /clan create <name>
+    public void create(Player player, String[] args) {
+        if (args.length > 0) {
+            player.sendMessage("Created clan: " + args[0]);
+        }
+    }
+    
+    @TabComplete(name = "create")
+    public List<String> createTabComplete(CommandSender sender, String[] args) {
+        return List.of("Name1", "Name2");
+    }
+}
+```
+
 ## Annotations
 
 ### `@Command` (Type)
@@ -56,12 +83,19 @@ public void onEnable() {
 - `aliases`: Array of aliases.
 
 ### `@Execute` (Method)
-Marks the method to be invoked when the command is run. Supported signatures:
+Marks the method to be invoked when the command is run.
+- `name`: The name of the subcommand (optional). If empty, it serves as the default executor.
+
+Supported signatures:
 - `void method(SenderType sender, String[] args)`
 - `void method(SenderType sender)`
 - `void method()`
 
 Where `SenderType` can be `CommandSender`, `Player`, `ConsoleCommandSender`, etc.
+
+### `@TabComplete` (Method)
+Marks the method used for tab completion.
+- `name`: The name of the subcommand to provide completions for (optional).
 
 ### `@Permission` (Type or Method)
 - `value`: The permission node string.
@@ -85,7 +119,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'me.touchie771:minecraftcommands:1.0.0'
+    implementation 'me.touchie771:minecraftcommands:1.0.1'
 }
 ```
 

@@ -1,5 +1,5 @@
 name: MinecraftCommands
-version: '1.0.0'
+version: '1.0.1'
 main: me.touchie771.minecraftCommands.MinecraftCommands
 api-version: '1.21'
 authors: [ Touchie771 ]
